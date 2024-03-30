@@ -3,12 +3,18 @@
 import re
 import subprocess
 import time
+import os
+import sys
+import logging
+from systemd.journal import JournalHandler
 from prometheus_client import start_http_server, Gauge
 from container import Container
 
 
 cpu_gauge = Gauge('container_cpu_usage', 'CPU usage of container as a percentage', labelnames=['id', 'name'])
 memory_gauge = Gauge('container_memory_usage', 'Memory usage of container as a percentage', labelnames=['id', 'name'])
+log = None
+port = 4000
 
 
 def docker_stats():
@@ -18,17 +24,16 @@ def docker_stats():
     out, err = p.communicate()
 
     return out.decode('utf-8').split('\n', 1)[1].splitlines()
-    
+
 
 def remove_gauges(current_containers, new_containers):
-    '''Set gauges of no longer running containers to -1'''
+    '''Restart script if a container has been removed'''
 
     for id in current_containers.keys():
         if id not in new_containers.keys():
-            name = current_containers[id].name
 
-            cpu_gauge.labels(id=id, name=name).set(-1)
-            memory_gauge.labels(id=id, name=name).set(-1)
+            log.info(f'Container {current_containers[id].name} is no longer running. Restarting docker-exporter.')
+            # os.execv(sys.argv[0], sys.argv)
 
 
 def update_containers(current_containers):
@@ -51,8 +56,8 @@ def update_stats(current_containers):
         name = containers[id].name
         cpu = containers[id].cpu
         memory = containers[id].memory
-        
-        cpu_gauge.labels(id=id, name=name).set(cpu) 
+
+        cpu_gauge.labels(id=id, name=name).set(cpu)
         memory_gauge.labels(id=id, name=name).set(memory)
 
 
@@ -72,12 +77,28 @@ def return_containers_dict():
     return containers
 
 
+def init_logger():
+    '''Init logging handler'''
+
+    global log
+    log = logging.getLogger('docker-exporter')
+    log.addHandler(JournalHandler())
+    log.setLevel(logging.INFO)
+
+
 def init():
     '''Start exporter daemon and set initial container values'''
 
-    start_http_server(4000)
-    current_containers = return_containers_dict() 
+    init_logger()
 
+    log.info('Log handler initalized.')
+    log.info(f'Starting HTTP server on port {port}.')
+    start_http_server(port)
+
+    log.info('Running docker stats for the first time.')
+    current_containers = return_containers_dict()
+
+    log.info('Monitoring docker stats every 15 seconds.')
     while True:
         update_stats(current_containers)
         time.sleep(15)
