@@ -68,7 +68,7 @@ def check_containers_down(new_containers: dict):
 
     if len(new_containers) == 0:
         log.warning('Detected docker containers are down.')
-        log.info('Waiting for containers to come back up.')
+        log.warning('Waiting for containers to come back up.')
 
         while True:
             time.sleep(15)
